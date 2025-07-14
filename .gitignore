@@ -16,3 +16,7 @@ src/__pycache__
 .pytest_cache
 config/__pycache__/
 .github/workflows/cd.yml
+src/web/__pycache__
+src/models/__pycache__
+src/data/__pycache__
+src/api/__pycache__
