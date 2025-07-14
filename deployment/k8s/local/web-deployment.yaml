@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: soma-web
+  namespace: soma-local
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: soma-web
+  template:
+    metadata:
+      labels:
+        app: soma-web
+    spec:
+      containers:
+      - name: web
+        image: soma-web:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 7860
+        env:
+        - name: ENVIRONMENT
+          valueFrom:
+            configMapKeyRef:
+              name: soma-config
+              key: ENVIRONMENT
+        - name: API_URL
+          valueFrom:
+            configMapKeyRef:
+              name: soma-config
+              key: API_URL
+        command: ["python", "-m", "src.web.gradio_app"]
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 7860
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 7860
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        volumeMounts:
+        - name: data-volume
+          mountPath: /app/data
+      volumes:
+      - name: data-volume
+        emptyDir: {}

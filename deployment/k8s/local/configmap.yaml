@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: soma-config
+  namespace: soma-local
+data:
+  ENVIRONMENT: "development"
+  DEBUG: "true"
+  LOG_LEVEL: "INFO"
+  DATABASE_URL: "duckdb:///app/data/soma.duckdb"
+  API_URL: "http://soma-api-service:5001"
+  WEB_URL: "http://soma-web-service:7860"

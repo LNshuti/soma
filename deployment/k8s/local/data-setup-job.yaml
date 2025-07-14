@@ -1,0 +1,26 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: soma-data-setup
+  namespace: soma-local
+spec:
+  template:
+    spec:
+      containers:
+      - name: data-setup
+        image: soma-data-setup:latest
+        imagePullPolicy: Never
+        command: ["python", "-m", "src.data.generators"]
+        env:
+        - name: ENVIRONMENT
+          valueFrom:
+            configMapKeyRef:
+              name: soma-config
+              key: ENVIRONMENT
+        volumeMounts:
+        - name: data-volume
+          mountPath: /app/data
+      volumes:
+      - name: data-volume
+        emptyDir: {}
+      restartPolicy: OnFailure
