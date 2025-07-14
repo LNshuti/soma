@@ -26,8 +26,10 @@ jobs:
     
     - name: Install dbt dependencies
       run: |
-        cd soma
+        ls -la
+        cd dbt
         dbt deps
+        dbt run
         cd ..
       env:
         DBT_TARGET: ci
