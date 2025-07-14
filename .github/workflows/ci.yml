@@ -27,6 +27,7 @@ jobs:
     - name: Install dbt dependencies
       run: |
         ls -la
+        ls dbt/
         cd dbt
         dbt deps
         dbt run
