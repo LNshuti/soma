@@ -1,0 +1,48 @@
+version: 2
+
+sources:
+  - name: raw
+    description: "Raw content distribution data from Soma systems"
+    schema: raw
+    tables:
+      - name: publishers
+        description: "Publisher master data"
+        columns:
+          - name: publisher_id
+            description: "Unique publisher identifier"
+            data_tests:
+              - unique
+              - not_null
+      
+      - name: books
+        description: "Book catalog and metadata"
+        columns:
+          - name: book_id
+            description: "Unique book identifier"
+            data_tests:
+              - unique
+              - not_null
+          - name: isbn
+            description: "International Standard Book Number"
+      
+      - name: sales
+        description: "Sales transaction records"
+        columns:
+          - name: transaction_id
+            description: "Unique transaction identifier"
+            data_tests:
+              - unique
+              - not_null
+      
+      - name: inventory
+        description: "Inventory levels across warehouses"
+        
+      - name: campaign_events
+        description: "Marketing campaign performance data"
+        columns:
+          - name: campaign_id
+            description: "Unique campaign identifier"
+          - name: experiment_id
+            description: "Experiment identifier for A/B tests"
+          - name: treatment_group
+            description: "Treatment group (control/treatment)"

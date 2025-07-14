@@ -1,0 +1,36 @@
+version: 2
+
+models:
+  - name: dim_publishers
+    description: "Publisher dimension with enriched attributes"
+    columns:
+      - name: publisher_id
+        description: "Unique publisher identifier"
+        data_tests:
+          - unique
+          - not_null
+
+  - name: dim_books
+    description: "Book dimension with enriched attributes"
+    columns:
+      - name: book_id
+        description: "Unique book identifier"
+        data_tests:
+          - unique
+          - not_null
+
+  - name: fact_sales
+    description: "Sales fact table"
+    columns:
+      - name: transaction_id
+        description: "Unique transaction identifier"
+        data_tests:
+          - unique
+          - not_null
+      - name: book_id
+        description: "Foreign key to book dimension"
+        data_tests:
+          - not_null
+          - relationships:
+              to: ref('dim_books')
+              field: book_id
