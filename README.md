@@ -21,9 +21,9 @@
 ```bash
 git clone https://github.com/LNshuti/soma.git
 cd soma
-uv venv
-source .venv/bin/activate
-pip install -e ".[rag,dev]"
+conda env create --file=environment.yaml
+conda activate soma
+pip install -e .
 ```
 
 2. **Configure environment**
