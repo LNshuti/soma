@@ -1,5 +1,6 @@
 __pycache__/
 data/soma_id.duckdb
+dbt/dbt_packages/
 ml_models/saved_models/
 .env
 ml_models/saved_models/
