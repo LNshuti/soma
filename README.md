@@ -29,6 +29,7 @@ pip install -e ".[rag,dev]"
 2. **Configure environment**
 ```bash
 cp .env.example .env
+
 ```
 
 3. **Generate synthetic data**
