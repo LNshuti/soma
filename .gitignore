@@ -21,3 +21,4 @@ src/models/__pycache__
 src/data/__pycache__
 src/api/__pycache__
 dbt/.user.yml
+dump.rdb
