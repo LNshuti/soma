@@ -120,8 +120,3 @@ docker compose logs -f
 # Stop services
 docker compose down
 ```
-
-Services will be available at:
-- **Web Interface**: http://localhost:7860
-- **API**: http://localhost:5001
-- **Health Check**: http://localhost:5001/health
