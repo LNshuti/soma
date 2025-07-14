@@ -1,0 +1,58 @@
+# deployment/docker/Dockerfile.workers
+FROM python:3.11-slim
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV DBT_PROFILES_DIR=/app/dbt
+ENV DBT_PROJECT_DIR=/app/dbt
+ENV CELERY_BROKER_URL=redis://redis:6379/0
+ENV CELERY_RESULT_BACKEND=redis://redis:6379/0
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    git \
+    curl \
+    build-essential \
+    cron \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set work directory
+WORKDIR /app
+
+# Copy requirements first for better caching
+COPY requirements.txt pyproject.toml ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Install worker-specific dependencies
+RUN pip install --no-cache-dir \
+    celery[redis] \
+    flower \
+    schedule
+
+# Copy source code
+COPY src/ ./src/
+COPY config/ ./config/
+COPY dbt/ ./dbt/
+COPY data/ ./data/
+
+# Copy worker scripts
+COPY deployment/scripts/ ./scripts/
+
+# Create necessary directories
+RUN mkdir -p /app/artifacts/models /app/artifacts/logs /app/data/processed
+
+# Create non-root user
+RUN useradd -m -u 1000 worker && \
+    chown -R worker:worker /app
+USER worker
+
+# Expose Flower monitoring port (optional)
+EXPOSE 5555
+
+# Health check
+HEALTHCHECK --interval=60s --timeout=30s --start-period=10s --retries=3 \
+    CMD python -c "import redis; redis.Redis(host='redis', port=6379).ping()" || exit 1
+
+# Default command (can be overridden)
+CMD ["python", "-m", "src.workers.scheduler"]

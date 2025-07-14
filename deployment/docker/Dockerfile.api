@@ -1,0 +1,52 @@
+# deployment/docker/Dockerfile.api
+FROM python:3.11-slim
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV DBT_PROFILES_DIR=/app/dbt
+ENV DBT_PROJECT_DIR=/app/dbt
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    git \
+    curl \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set work directory
+WORKDIR /app
+
+# Copy requirements first for better caching
+COPY requirements.txt ./
+# Install Python dependencies
+RUN pip install --no-cache-dir --upgrade pip
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Verify pydantic-settings installation
+RUN python -c "from pydantic_settings import BaseSettings; print('pydantic-settings installed successfully')"
+
+COPY pyproject.toml* ./
+
+# Copy source code
+COPY src/ ./src/
+COPY config/ ./config/
+COPY dbt/ ./dbt/
+
+# Create necessary directories
+RUN mkdir -p /app/data /app/artifacts/models /app/artifacts/logs
+
+# Create non-root user
+RUN useradd -m -u 1000 apiuser && \
+    chown -R apiuser:apiuser /app
+USER apiuser
+
+# Expose API port
+EXPOSE 5001
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:5001/health || exit 1
+
+# Default command
+CMD ["python", "-m", "src.api.app"]

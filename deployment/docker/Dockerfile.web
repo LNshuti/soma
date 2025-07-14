@@ -1,0 +1,50 @@
+# deployment/docker/Dockerfile.web
+FROM python:3.11-slim
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV GRADIO_SERVER_NAME=0.0.0.0
+ENV GRADIO_SERVER_PORT=7860
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    git \
+    curl \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set work directory
+WORKDIR /app
+
+# Copy requirements first for better caching
+COPY requirements.txt pyproject.toml ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Install additional web dependencies
+RUN pip install --no-cache-dir \
+    gradio \
+    plotly 
+
+# Copy source code
+COPY src/ ./src/
+COPY config/ ./config/
+COPY data/ ./data/
+
+# Create necessary directories
+RUN mkdir -p /app/artifacts/models /app/artifacts/logs
+
+# Create non-root user
+RUN useradd -m -u 1000 webuser && \
+    chown -R webuser:webuser /app
+USER webuser
+
+# Expose Gradio port
+EXPOSE 7860
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:7860/ || exit 1
+
+# Default command
+CMD ["python", "-m", "src.web.gradio_app"]
