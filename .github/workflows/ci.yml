@@ -32,7 +32,7 @@ jobs:
         dbt run
         cd ..
       env:
-        DBT_TARGET: ci
+        DBT_TARGET: dev
     
     - name: Generate test data for CI
       run: |
