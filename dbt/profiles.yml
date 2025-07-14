@@ -1,0 +1,13 @@
+soma:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: "{{ env_var('DBT_PROFILES_DIR') }}/../data/soma.duckdb"
+      threads: 4
+    
+    prod:
+      type: duckdb
+      path: "{{ env_var('DBT_PROFILES_DIR') }}/../data/soma.duckdb"
+      threads: 8
+      schema: prod

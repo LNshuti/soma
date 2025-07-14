@@ -1,0 +1,58 @@
+name: 'soma_content_analytics'
+version: '1.0.0'
+config-version: 2
+
+profile: 'soma'
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+models:
+  soma_content_analytics:
+    # Staging models
+    staging:
+      +materialized: view
+      +docs:
+        node_color: "lightblue"
+    
+    # Mart models (dimensional)
+    marts:
+      +materialized: table
+      +docs:
+        node_color: "lightgreen"
+    
+    # Analytics models
+    analytics:
+      +materialized: table
+      +docs:
+        node_color: "orange"
+    
+    # ML feature models
+    ml_features:
+      +materialized: table
+      +docs:
+        node_color: "purple"
+    
+    # Experiments
+    experiments:
+      +materialized: view
+      +docs:
+        node_color: "yellow"
+
+vars:
+  timezone: 'UTC'
+  feature_window_days: 30
+  min_transactions_for_features: 5
+
+tests:
+  soma_content_analytics:
+    +store_failures: true
