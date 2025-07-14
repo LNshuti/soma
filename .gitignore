@@ -22,3 +22,5 @@ src/data/__pycache__
 src/api/__pycache__
 dbt/.user.yml
 dump.rdb
+deployment/k8s/aws/
+deployment/k8s/deploy-aws.sh
