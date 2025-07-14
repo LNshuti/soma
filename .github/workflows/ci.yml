@@ -33,6 +33,7 @@ jobs:
         cd ..
       env:
         DBT_TARGET: dev
+        DBT_PROFILES_DIR: ./dbt
     
     - name: Generate test data for CI
       run: |
@@ -40,6 +41,7 @@ jobs:
       env:
         DBT_TARGET: ci
         DBT_DUCKDB_PATH: ":memory:"
+        DBT_PROFILES_DIR: ./dbt
     
     - name: Run tests
       run: |
@@ -48,3 +50,4 @@ jobs:
       env:
         DBT_TARGET: ci
         DBT_DUCKDB_PATH: ":memory:"
+        DBT_PROFILES_DIR: ./dbt
