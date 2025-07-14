@@ -1,0 +1,52 @@
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: deployment/docker/Dockerfile.api
+    ports:
+      - "5001:5001"
+    environment:
+      - ENVIRONMENT=development
+      - DB_PATH=/app/data/soma.duckdb
+      - MODEL_DIR=/app/artifacts/models
+      - FLASK_DEBUG=true
+      - PYTHONPATH=/app
+    command: python -m src.api.app 
+    volumes:
+      - ./data:/app/data
+      - ./artifacts:/app/artifacts
+      - ./config:/app/config
+    depends_on:
+      - data-setup
+
+  web:
+    build:
+      context: .
+      dockerfile: deployment/docker/Dockerfile.web
+    ports:
+      - "7860:7860"
+    environment:
+      - API_BASE_URL=http://api:5001
+      - DB_PATH=/app/data/soma.duckdb
+    volumes:
+      - ./data:/app/data
+      - ./artifacts:/app/artifacts
+    depends_on:
+      - api
+    command: python src/web/gradio_app.py
+
+  data-setup:
+    build:
+      context: .
+      dockerfile: deployment/docker/Dockerfile.api
+    command: python -m src.data.generators
+    volumes:
+      - ./data:/app/data
+      - ./dbt:/app/dbt
+    environment:
+      - DB_PATH=/app/data/soma.duckdb
+
+volumes:
+  data:
+  artifacts:
