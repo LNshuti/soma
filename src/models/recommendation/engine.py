@@ -10,7 +10,7 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from src.models.base import BaseModel
+from src.models.base import BaseModel, ModelType
 from src.utils.database import DatabaseManager
 from src.utils.helpers import setup_logging
 
@@ -22,135 +22,133 @@ class RecommendationEngine(BaseModel):
 
     def __init__(self, db_manager: Optional[DatabaseManager] = None):
         """Initialize recommendation engine"""
-        super().__init__()
-        self.db_manager = db_manager or DatabaseManager()
-        self.model_name = "recommendation_engine"
+        super().__init__(
+            model_name="recommendation_engine",
+            model_type=ModelType.RECOMMENDATION,
+            db_manager=db_manager
+        )
         self.is_trained = False
         self.user_item_matrix = None
         self.item_features = None
         self.similarity_matrix = None
+        self.popular_items = None
 
-    def load_training_data(self) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    def load_data(self) -> pd.DataFrame:
         """Load training data for recommendations"""
         try:
             # Load sales data as user-item interactions
             sales_query = """
             SELECT 
-                customer_type as user_id,
-                book_id,
-                SUM(quantity) as rating,
-                COUNT(*) as interaction_count
-            FROM fact_sales 
-            WHERE sale_date >= CURRENT_DATE - INTERVAL '365 days'
-            GROUP BY customer_type, book_id
-            HAVING SUM(quantity) > 0
+                s.customer_type as user_id,
+                s.book_id,
+                SUM(s.quantity) as rating,
+                COUNT(*) as interaction_count,
+                AVG(s.unit_price) as avg_price,
+                MAX(s.sale_date) as last_interaction
+            FROM fact_sales s
+            WHERE s.sale_date >= CURRENT_DATE - INTERVAL '365 days'
+                AND s.quantity > 0
+            GROUP BY s.customer_type, s.book_id
+            HAVING SUM(s.quantity) > 0
+            ORDER BY user_id, book_id
             """
+
+            interactions = self.db_manager.fetch_dataframe(sales_query)
+            logger.info(f"Loaded {len(interactions)} user-item interactions")
+            return interactions
+
+        except Exception as e:
+            logger.error(f"Failed to load training data: {e}")
+            # Return empty DataFrame with expected columns
+            return pd.DataFrame(columns=["user_id", "book_id", "rating", "interaction_count"])
+
+    def prepare_features(self, df: pd.DataFrame) -> tuple:
+        """Prepare features for training"""
+        try:
+            if df.empty:
+                return pd.DataFrame(), pd.Series()
 
             # Load book features
             features_query = """
             SELECT 
-                book_id,
-                genre,
-                price_category,
-                length_category,
-                recency_category,
-                publisher_type,
-                avg_selling_price,
-                total_quantity_sold,
-                velocity_score
-            FROM book_features
-            WHERE total_transactions > 0
+                b.book_id,
+                b.genre,
+                b.price_category,
+                b.length_category,
+                b.recency_category,
+                b.publisher_type,
+                b.price,
+                b.page_count,
+                b.publication_year,
+                COALESCE(bf.total_quantity_sold, 0) as total_sales,
+                COALESCE(bf.velocity_score, 0) as velocity_score,
+                COALESCE(bf.avg_selling_price, b.price) as avg_selling_price
+            FROM dim_books b
+            LEFT JOIN book_features bf ON b.book_id = bf.book_id
+            WHERE b.book_id IN (SELECT DISTINCT book_id FROM fact_sales)
             """
 
-            interactions = self.db_manager.fetch_dataframe(sales_query)
-            features = self.db_manager.fetch_dataframe(features_query)
+            try:
+                features = self.db_manager.fetch_dataframe(features_query)
+            except:
+                # Fallback query without book_features
+                features_query = """
+                SELECT 
+                    b.book_id,
+                    b.genre,
+                    b.price_category,
+                    b.price,
+                    b.page_count,
+                    b.publication_year,
+                    p.publisher_type
+                FROM dim_books b
+                LEFT JOIN dim_publishers p ON b.publisher_id = p.publisher_id
+                WHERE b.book_id IN (SELECT DISTINCT book_id FROM fact_sales)
+                """
+                features = self.db_manager.fetch_dataframe(features_query)
 
-            logger.info(
-                f"Loaded {len(interactions)} interactions and {len(features)} item features"
-            )
-            return interactions, features
-
-        except Exception as e:
-            logger.error(f"Failed to load training data: {e}")
-            raise
-
-    def prepare_data(self, interactions: pd.DataFrame, features: pd.DataFrame) -> None:
-        """Prepare data for training"""
-        try:
-            # Create user-item matrix
-            self.user_item_matrix = interactions.pivot_table(
-                index="user_id", columns="book_id", values="rating", fill_value=0
-            )
-
-            # Prepare item features
-            self.item_features = features.set_index("book_id")
-
-            # One-hot encode categorical features
-            categorical_cols = [
-                "genre",
-                "price_category",
-                "length_category",
-                "recency_category",
-                "publisher_type",
-            ]
-
-            for col in categorical_cols:
-                if col in self.item_features.columns:
-                    dummies = pd.get_dummies(self.item_features[col], prefix=col)
-                    self.item_features = pd.concat(
-                        [self.item_features, dummies], axis=1
-                    )
-                    self.item_features.drop(col, axis=1, inplace=True)
-
-            logger.info(f"Prepared user-item matrix: {self.user_item_matrix.shape}")
-            logger.info(f"Prepared item features: {self.item_features.shape}")
+            logger.info(f"Loaded {len(features)} item features")
+            
+            # Return both interactions and features
+            return df, features
 
         except Exception as e:
-            logger.error(f"Failed to prepare data: {e}")
-            raise
+            logger.error(f"Feature preparation failed: {e}")
+            return pd.DataFrame(), pd.DataFrame()
 
-    def compute_item_similarity(self) -> None:
-        """Compute item-item similarity matrix"""
-        try:
-            from sklearn.metrics.pairwise import cosine_similarity
-            from sklearn.preprocessing import StandardScaler
-
-            # Standardize features
-            scaler = StandardScaler()
-            features_scaled = scaler.fit_transform(self.item_features.fillna(0))
-
-            # Compute similarity matrix
-            self.similarity_matrix = cosine_similarity(features_scaled)
-
-            # Convert to DataFrame for easier indexing
-            self.similarity_matrix = pd.DataFrame(
-                self.similarity_matrix,
-                index=self.item_features.index,
-                columns=self.item_features.index,
-            )
-
-            logger.info("Computed item similarity matrix")
-
-        except Exception as e:
-            logger.error(f"Failed to compute similarity: {e}")
-            raise
-
-    def train(self) -> Dict:
+    def train(self, X: Optional[pd.DataFrame] = None, y: Optional[pd.Series] = None) -> Dict:
         """Train the recommendation model"""
         try:
-            logger.info("🚀 Starting recommendation engine training...")
+            logger.info("Starting recommendation engine training...")
 
             # Load data
-            interactions, features = self.load_training_data()
-
-            if interactions.empty or features.empty:
+            interactions = self.load_data()
+            if interactions.empty:
                 raise ValueError("No training data available")
 
-            # Prepare data
-            self.prepare_data(interactions, features)
+            interactions, features = self.prepare_features(interactions)
+            
+            if interactions.empty:
+                raise ValueError("No valid training data after preparation")
 
-            # Compute similarities
-            self.compute_item_similarity()
+            # Store data for recommendations
+            self.interactions = interactions
+            self.item_features = features.set_index("book_id") if not features.empty else pd.DataFrame()
+
+            # Create user-item matrix
+            self.user_item_matrix = interactions.pivot_table(
+                index="user_id", 
+                columns="book_id", 
+                values="rating", 
+                fill_value=0
+            )
+
+            # Compute item similarity if we have features
+            if not self.item_features.empty:
+                self._compute_item_similarity()
+
+            # Compute popular items
+            self._compute_popular_items()
 
             self.is_trained = True
             self.last_trained = datetime.now()
@@ -161,35 +159,99 @@ class RecommendationEngine(BaseModel):
             metrics = {
                 "num_users": len(self.user_item_matrix.index),
                 "num_items": len(self.user_item_matrix.columns),
-                "num_interactions": interactions.shape[0],
-                "sparsity": 1
-                - (
-                    interactions.shape[0]
-                    / (
-                        len(self.user_item_matrix.index)
-                        * len(self.user_item_matrix.columns)
-                    )
-                ),
-                "training_time": datetime.now(),
+                "num_interactions": len(interactions),
+                "sparsity": 1 - (len(interactions) / (len(self.user_item_matrix.index) * len(self.user_item_matrix.columns))),
+                "training_time": datetime.now().isoformat(),
             }
 
-            logger.info(f"✅ Training completed: {metrics}")
+            logger.info(f"Training completed: {metrics}")
             return metrics
 
         except Exception as e:
-            logger.error(f"❌ Training failed: {e}")
+            logger.error(f"Training failed: {e}")
             raise
 
-    def get_similar_items(
-        self, item_id: str, n_items: int = 10
-    ) -> List[Tuple[str, float]]:
+    def _compute_item_similarity(self) -> None:
+        """Compute item-item similarity matrix"""
+        try:
+            from sklearn.metrics.pairwise import cosine_similarity
+            from sklearn.preprocessing import StandardScaler
+
+            # Prepare numerical features
+            numeric_features = self.item_features.select_dtypes(include=[np.number]).fillna(0)
+            
+            # Encode categorical features
+            categorical_columns = ["genre", "price_category", "publisher_type"]
+            for col in categorical_columns:
+                if col in self.item_features.columns:
+                    encoded = pd.get_dummies(self.item_features[col], prefix=col)
+                    numeric_features = pd.concat([numeric_features, encoded], axis=1)
+
+            if numeric_features.empty:
+                logger.warning("No features available for similarity computation")
+                return
+
+            # Standardize features
+            scaler = StandardScaler()
+            features_scaled = scaler.fit_transform(numeric_features)
+
+            # Compute similarity matrix
+            similarity_scores = cosine_similarity(features_scaled)
+
+            # Convert to DataFrame
+            self.similarity_matrix = pd.DataFrame(
+                similarity_scores,
+                index=numeric_features.index,
+                columns=numeric_features.index,
+            )
+
+            logger.info("Computed item similarity matrix")
+
+        except Exception as e:
+            logger.error(f"Failed to compute similarity: {e}")
+            self.similarity_matrix = None
+
+    def _compute_popular_items(self) -> None:
+        """Compute popular items for recommendations"""
+        try:
+            popular_query = """
+            SELECT 
+                b.book_id,
+                b.title,
+                b.author,
+                b.genre,
+                b.price,
+                SUM(s.quantity) as total_sales,
+                COUNT(DISTINCT s.customer_type) as unique_customers,
+                AVG(s.unit_price) as avg_price
+            FROM dim_books b
+            JOIN fact_sales s ON b.book_id = s.book_id
+            WHERE s.sale_date >= CURRENT_DATE - INTERVAL '180 days'
+            GROUP BY b.book_id, b.title, b.author, b.genre, b.price
+            ORDER BY total_sales DESC, unique_customers DESC
+            LIMIT 100
+            """
+            
+            self.popular_items = self.db_manager.fetch_dataframe(popular_query)
+            logger.info(f"Computed {len(self.popular_items)} popular items")
+
+        except Exception as e:
+            logger.error(f"Failed to compute popular items: {e}")
+            self.popular_items = pd.DataFrame()
+
+    def predict(self, X: pd.DataFrame) -> np.ndarray:
+        """Make predictions - not applicable for recommendation engine"""
+        # This method is required by BaseModel but not used for recommendations
+        return np.array([])
+
+    def get_similar_items(self, item_id: str, n_items: int = 10) -> List[Tuple[str, float]]:
         """Get similar items to a given item"""
-        if not self.is_trained or self.similarity_matrix is None:
+        if not self.is_trained:
             raise ValueError("Model not trained")
 
-        if item_id not in self.similarity_matrix.index:
+        if self.similarity_matrix is None or item_id not in self.similarity_matrix.index:
             logger.warning(f"Item {item_id} not found in similarity matrix")
-            return []
+            return self.get_popular_items(n_items)
 
         # Get similarity scores for the item
         similarities = self.similarity_matrix.loc[item_id].sort_values(ascending=False)
@@ -199,9 +261,7 @@ class RecommendationEngine(BaseModel):
 
         return [(item, score) for item, score in similar_items.items()]
 
-    def get_user_recommendations(
-        self, user_id: str, n_recommendations: int = 10
-    ) -> List[Tuple[str, float]]:
+    def get_user_recommendations(self, user_id: str, n_recommendations: int = 10) -> List[Tuple[str, float]]:
         """Get recommendations for a user"""
         if not self.is_trained:
             raise ValueError("Model not trained")
@@ -220,22 +280,29 @@ class RecommendationEngine(BaseModel):
         # Calculate scores for all items
         item_scores = {}
 
-        for item in self.similarity_matrix.index:
+        for item in self.user_item_matrix.columns:
             if item in user_items:
                 continue  # Skip items user already has
 
             score = 0
             weight_sum = 0
 
-            for user_item in user_items:
-                if user_item in self.similarity_matrix.index:
-                    similarity = self.similarity_matrix.loc[item, user_item]
-                    rating = user_ratings[user_item]
-                    score += similarity * rating
-                    weight_sum += abs(similarity)
+            # Use similarity if available
+            if self.similarity_matrix is not None and item in self.similarity_matrix.index:
+                for user_item in user_items:
+                    if user_item in self.similarity_matrix.index:
+                        similarity = self.similarity_matrix.loc[item, user_item]
+                        rating = user_ratings[user_item]
+                        score += similarity * rating
+                        weight_sum += abs(similarity)
 
-            if weight_sum > 0:
-                item_scores[item] = score / weight_sum
+                if weight_sum > 0:
+                    item_scores[item] = score / weight_sum
+            else:
+                # Fallback to popularity-based scoring
+                if not self.popular_items.empty and item in self.popular_items["book_id"].values:
+                    popularity = self.popular_items[self.popular_items["book_id"] == item]["total_sales"].iloc[0]
+                    item_scores[item] = popularity
 
         # Sort and return top recommendations
         recommendations = sorted(item_scores.items(), key=lambda x: x[1], reverse=True)
@@ -244,13 +311,23 @@ class RecommendationEngine(BaseModel):
     def get_popular_items(self, n_items: int = 10) -> List[Tuple[str, float]]:
         """Get popular items as fallback recommendations"""
         try:
+            if not self.popular_items.empty:
+                popular_subset = self.popular_items.head(n_items)
+                return [
+                    (row["book_id"], row["total_sales"])
+                    for _, row in popular_subset.iterrows()
+                ]
+
+            # Fallback query
             query = """
             SELECT 
-                book_id,
-                total_quantity_sold as popularity_score
-            FROM book_features 
-            WHERE total_transactions > 10
-            ORDER BY total_quantity_sold DESC
+                b.book_id,
+                SUM(s.quantity) as popularity_score
+            FROM dim_books b
+            JOIN fact_sales s ON b.book_id = s.book_id
+            WHERE s.sale_date >= CURRENT_DATE - INTERVAL '90 days'
+            GROUP BY b.book_id
+            ORDER BY popularity_score DESC
             LIMIT ?
             """
 
@@ -268,135 +345,14 @@ class RecommendationEngine(BaseModel):
             logger.error(f"Failed to get popular items: {e}")
             return []
 
-    def predict(
-        self, user_id: str, item_id: Optional[str] = None, n_recommendations: int = 10
-    ) -> Dict:
-        """Make predictions"""
-        try:
-            if item_id:
-                # Get similar items
-                similar_items = self.get_similar_items(item_id, n_recommendations)
-                return {
-                    "type": "similar_items",
-                    "item_id": item_id,
-                    "recommendations": similar_items,
-                }
-            else:
-                # Get user recommendations
-                recommendations = self.get_user_recommendations(
-                    user_id, n_recommendations
-                )
-                return {
-                    "type": "user_recommendations",
-                    "user_id": user_id,
-                    "recommendations": recommendations,
-                }
-
-        except Exception as e:
-            logger.error(f"Prediction failed: {e}")
-            # Fallback to popular items
-            popular = self.get_popular_items(n_recommendations)
-            return {
-                "type": "fallback_popular",
-                "recommendations": popular,
-                "error": str(e),
-            }
-
-    def save_model(self) -> None:
-        """Save model artifacts"""
-        try:
-            artifacts_dir = Path("artifacts/models")
-            artifacts_dir.mkdir(parents=True, exist_ok=True)
-
-            # Save similarity matrix
-            if self.similarity_matrix is not None:
-                self.similarity_matrix.to_pickle(
-                    artifacts_dir / "similarity_matrix.pkl"
-                )
-
-            # Save user-item matrix
-            if self.user_item_matrix is not None:
-                self.user_item_matrix.to_pickle(artifacts_dir / "user_item_matrix.pkl")
-
-            # Save item features
-            if self.item_features is not None:
-                self.item_features.to_pickle(artifacts_dir / "item_features.pkl")
-
-            # Save metadata
-            metadata = {
-                "model_name": self.model_name,
-                "is_trained": self.is_trained,
-                "last_trained": (
-                    self.last_trained.isoformat() if self.last_trained else None
-                ),
-                "num_users": (
-                    len(self.user_item_matrix.index)
-                    if self.user_item_matrix is not None
-                    else 0
-                ),
-                "num_items": (
-                    len(self.similarity_matrix.index)
-                    if self.similarity_matrix is not None
-                    else 0
-                ),
-            }
-
-            import json
-
-            with open(artifacts_dir / "recommendation_metadata.json", "w") as f:
-                json.dump(metadata, f, indent=2)
-
-            logger.info(f"Model saved to {artifacts_dir}")
-
-        except Exception as e:
-            logger.error(f"Failed to save model: {e}")
-
-    def load_model(self) -> bool:
-        """Load model artifacts"""
-        try:
-            artifacts_dir = Path("artifacts/models")
-
-            # Check if files exist
-            required_files = ["similarity_matrix.pkl", "recommendation_metadata.json"]
-            if not all((artifacts_dir / f).exists() for f in required_files):
-                logger.warning("Model artifacts not found")
-                return False
-
-            # Load similarity matrix
-            self.similarity_matrix = pd.read_pickle(
-                artifacts_dir / "similarity_matrix.pkl"
-            )
-
-            # Load user-item matrix if exists
-            if (artifacts_dir / "user_item_matrix.pkl").exists():
-                self.user_item_matrix = pd.read_pickle(
-                    artifacts_dir / "user_item_matrix.pkl"
-                )
-
-            # Load item features if exists
-            if (artifacts_dir / "item_features.pkl").exists():
-                self.item_features = pd.read_pickle(artifacts_dir / "item_features.pkl")
-
-            # Load metadata
-            import json
-
-            with open(artifacts_dir / "recommendation_metadata.json", "r") as f:
-                metadata = json.load(f)
-
-            self.is_trained = metadata.get("is_trained", False)
-            if metadata.get("last_trained"):
-                self.last_trained = datetime.fromisoformat(metadata["last_trained"])
-
-            logger.info("Model loaded successfully")
-            return True
-
-        except Exception as e:
-            logger.error(f"Failed to load model: {e}")
-            return False
-
     def get_similar_books(self, book_id: str, n_recommendations: int = 10) -> Dict:
         """Get similar books based on content similarity."""
         try:
+            if not self.is_trained:
+                if not self.load_model():
+                    # Train if no saved model
+                    self.train()
+
             similar_items = self.get_similar_items(book_id, n_recommendations)
 
             if not similar_items:
@@ -417,13 +373,13 @@ class RecommendationEngine(BaseModel):
             books_df = self.db_manager.fetch_dataframe(query, book_ids)
 
             recommendations = []
-            for book_id, similarity_score in similar_items:
-                book_info = books_df[books_df["book_id"] == book_id]
+            for book_id_sim, similarity_score in similar_items:
+                book_info = books_df[books_df["book_id"] == book_id_sim]
                 if not book_info.empty:
                     book = book_info.iloc[0]
                     recommendations.append(
                         {
-                            "book_id": book_id,
+                            "book_id": book_id_sim,
                             "title": book["title"],
                             "author": book["author"],
                             "genre": book["genre"],
@@ -446,9 +402,7 @@ class RecommendationEngine(BaseModel):
             logger.error(f"Similar books recommendation failed: {e}")
             return {"error": str(e), "book_id": book_id}
 
-    def get_popular_by_user_type(
-        self, user_type: str, n_recommendations: int = 10
-    ) -> Dict:
+    def get_popular_by_user_type(self, user_type: str, n_recommendations: int = 10) -> Dict:
         """Get popular books for specific user type."""
         try:
             query = """
@@ -462,18 +416,29 @@ class RecommendationEngine(BaseModel):
             FROM dim_books b
             JOIN fact_sales s ON b.book_id = s.book_id
             WHERE s.customer_type = ?
+                AND s.sale_date >= CURRENT_DATE - INTERVAL '180 days'
             GROUP BY b.book_id, b.title, b.author, b.genre, b.price
             ORDER BY popularity_score DESC
             LIMIT ?
             """
 
-            books_df = self.db_manager.fetch_dataframe(
-                query, [user_type, n_recommendations]
-            )
+            books_df = self.db_manager.fetch_dataframe(query, [user_type, n_recommendations])
 
             if books_df.empty:
                 # Fallback to general popular books
-                return self.get_popular_items(n_recommendations)
+                popular_items = self.get_popular_items(n_recommendations)
+                if not popular_items:
+                    return {"error": f"No recommendations found for user type {user_type}"}
+                
+                # Convert to expected format
+                book_ids = [item[0] for item in popular_items]
+                placeholders = ",".join(["?" for _ in book_ids])
+                fallback_query = f"""
+                SELECT book_id, title, author, genre, price
+                FROM dim_books 
+                WHERE book_id IN ({placeholders})
+                """
+                books_df = self.db_manager.fetch_dataframe(fallback_query, book_ids)
 
             recommendations = []
             for _, book in books_df.iterrows():
@@ -484,7 +449,7 @@ class RecommendationEngine(BaseModel):
                         "author": book["author"],
                         "genre": book["genre"],
                         "price": float(book["price"]),
-                        "popularity_score": float(book["popularity_score"]),
+                        "popularity_score": float(book.get("popularity_score", 0)),
                         "reason": f"Popular among {user_type} customers",
                     }
                 )
@@ -502,17 +467,102 @@ class RecommendationEngine(BaseModel):
             logger.error(f"Popular by user type recommendation failed: {e}")
             return {"error": str(e), "user_type": user_type}
 
-    def get_content_based_recommendations(
-        self, book_id: str, n_recommendations: int = 10
-    ) -> Dict:
+    def get_content_based_recommendations(self, book_id: str, n_recommendations: int = 10) -> Dict:
         """Alias for get_similar_books for API compatibility."""
         return self.get_similar_books(book_id, n_recommendations)
+
+    def save_model(self) -> None:
+        """Save model artifacts"""
+        try:
+            artifacts_dir = Path("artifacts/models/recommendation_engine")
+            artifacts_dir.mkdir(parents=True, exist_ok=True)
+
+            # Save similarity matrix
+            if self.similarity_matrix is not None:
+                self.similarity_matrix.to_pickle(artifacts_dir / "similarity_matrix.pkl")
+
+            # Save user-item matrix
+            if self.user_item_matrix is not None:
+                self.user_item_matrix.to_pickle(artifacts_dir / "user_item_matrix.pkl")
+
+            # Save item features
+            if self.item_features is not None:
+                self.item_features.to_pickle(artifacts_dir / "item_features.pkl")
+
+            # Save popular items
+            if self.popular_items is not None:
+                self.popular_items.to_pickle(artifacts_dir / "popular_items.pkl")
+
+            # Save metadata
+            metadata = {
+                "model_name": self.model_name,
+                "is_trained": self.is_trained,
+                "last_trained": self.last_trained.isoformat() if self.last_trained else None,
+                "num_users": len(self.user_item_matrix.index) if self.user_item_matrix is not None else 0,
+                "num_items": len(self.similarity_matrix.index) if self.similarity_matrix is not None else 0,
+            }
+
+            import json
+            with open(artifacts_dir / "metadata.json", "w") as f:
+                json.dump(metadata, f, indent=2)
+
+            logger.info(f"Model saved to {artifacts_dir}")
+
+        except Exception as e:
+            logger.error(f"Failed to save model: {e}")
+
+    def load_model(self) -> bool:
+        """Load model artifacts"""
+        try:
+            artifacts_dir = Path("artifacts/models/recommendation_engine")
+
+            # Check if metadata exists
+            metadata_path = artifacts_dir / "metadata.json"
+            if not metadata_path.exists():
+                logger.warning("Model metadata not found")
+                return False
+
+            # Load metadata
+            import json
+            with open(metadata_path, "r") as f:
+                metadata = json.load(f)
+
+            # Load similarity matrix
+            sim_path = artifacts_dir / "similarity_matrix.pkl"
+            if sim_path.exists():
+                self.similarity_matrix = pd.read_pickle(sim_path)
+
+            # Load user-item matrix
+            ui_path = artifacts_dir / "user_item_matrix.pkl"
+            if ui_path.exists():
+                self.user_item_matrix = pd.read_pickle(ui_path)
+
+            # Load item features
+            feat_path = artifacts_dir / "item_features.pkl"
+            if feat_path.exists():
+                self.item_features = pd.read_pickle(feat_path)
+
+            # Load popular items
+            pop_path = artifacts_dir / "popular_items.pkl"
+            if pop_path.exists():
+                self.popular_items = pd.read_pickle(pop_path)
+
+            self.is_trained = metadata.get("is_trained", False)
+            if metadata.get("last_trained"):
+                self.last_trained = datetime.fromisoformat(metadata["last_trained"])
+
+            logger.info("Model loaded successfully")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to load model: {e}")
+            return False
 
 
 def main():
     """Main function for training recommendation engine"""
     try:
-        logger.info("🚀 Starting recommendation engine training...")
+        logger.info("Starting recommendation engine training...")
 
         # Initialize engine
         engine = RecommendationEngine()
@@ -520,14 +570,16 @@ def main():
         # Train model
         metrics = engine.train()
 
-        logger.info("✅ Recommendation engine training completed!")
-        logger.info(f"📊 Metrics: {metrics}")
+        logger.info("Recommendation engine training completed!")
+        logger.info(f"Metrics: {metrics}")
+
+        return True
 
     except Exception as e:
-        logger.error(f"❌ Training failed: {e}")
+        logger.error(f"Training failed: {e}")
+        import traceback
+        traceback.print_exc()
         return False
-
-    return True
 
 
 if __name__ == "__main__":
