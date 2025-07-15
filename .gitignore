@@ -16,7 +16,7 @@ htmlcov/*
 src/__pycache__
 .pytest_cache
 config/__pycache__/
-.github/workflows/
+.github/workflows/*
 src/web/__pycache__
 src/models/__pycache__
 src/data/__pycache__
