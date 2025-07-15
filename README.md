@@ -104,14 +104,6 @@ pytest
 pytest --cov=src tests/
 ```
 
-## Deployment
-
-### Development
-```bash
-make setup-dev
-make run-api
-```
-
 ### Production
 ```bash
 docker compose -f docker-compose.yml up -d

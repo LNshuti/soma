@@ -25,3 +25,4 @@ dbt/.user.yml
 dump.rdb
 deployment/k8s/aws/
 deployment/k8s/deploy-aws.sh
+src/soma_ml_platform.egg-info/
