@@ -41,6 +41,16 @@ python generate_data.py
 ```bash
 cd dbt
 dbt deps
+```
+
+**Set required environment variable**
+```bash
+set -o allexport; source ../.env; set +o allexport; 
+```
+
+**Run dbt models** 
+```bash
+cd ..
 dbt run
 dbt test
 ```

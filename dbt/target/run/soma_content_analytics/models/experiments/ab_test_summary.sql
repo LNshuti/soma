@@ -1,0 +1,20 @@
+
+  
+  create view "soma"."main"."ab_test_summary__dbt_tmp" as (
+    
+
+WITH base AS (
+  SELECT * FROM "soma"."main"."ab_test_base"
+)
+
+SELECT
+  experiment_id,
+  treatment_group,
+  COUNT(*) AS num_campaigns,
+  AVG(ctr) AS avg_ctr,
+  STDDEV(ctr) AS std_ctr,
+  AVG(cpc) AS avg_cpc,
+  STDDEV(cpc) AS std_cpc
+FROM base
+GROUP BY 1, 2
+  );
