@@ -58,6 +58,9 @@ dbt test
 5. **Train ML models**
 ```bash
 python -m src.models.forecasting.demand_model
+```
+
+```bash
 python -m src.models.recommendation.engine
 ```
 

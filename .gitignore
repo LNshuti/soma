@@ -26,3 +26,7 @@ dump.rdb
 deployment/k8s/aws/
 deployment/k8s/deploy-aws.sh
 src/soma_ml_platform.egg-info/
+
+03_debug_examine_key_models.sh
+04_debug_examine_kubernetes.sh 
+05_debug_examine_pyfiles.sh 
