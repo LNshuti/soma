@@ -1,0 +1,30 @@
+# GitHub Pages configuration
+theme: minima
+title: SOMA Content Analytics Platform
+description: Comprehensive content distribution analytics platform with ML capabilities
+
+# Navigation
+nav:
+  - name: Home
+    url: /
+  - name: Installation
+    url: /installation
+  - name: API Documentation
+    url: /api/
+  - name: Architecture
+    url: /architecture
+
+# Plugins
+plugins:
+  - jekyll-feed
+  - jekyll-sitemap
+
+# Markdown settings
+markdown: kramdown
+highlighter: rouge
+
+# Show excerpts on homepage
+show_excerpts: true
+
+# Social links
+github_username: LNshuti
