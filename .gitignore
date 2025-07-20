@@ -1,26 +1,39 @@
+# Python cache files
 __pycache__/
+*/__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Data files
 data/soma_id.duckdb
-dbt/dbt_packages/
-ml_models/saved_models/
-.env
-ml_models/saved_models/
 *.pkl 
 *.parquet 
 examine_*
+
+# dbt
+dbt/dbt_packages/
+
+# ML models
+ml_models/saved_models/
+
+# Environment files
+.env
+
+# Logs
 logs/
-config/__pycache__
-tests/__pycache__
-src/__pycache__
+
+# Testing
 htmlcov/*
 .pytest_cache/*
-src/__pycache__
 .pytest_cache
-config/__pycache__/
+.coverage
+.coverage.*
+
+# GitHub workflows
 .github/workflows/*
-src/web/__pycache__
-src/models/__pycache__
-src/data/__pycache__
-src/api/__pycache__
 dbt/.user.yml
 dump.rdb
 deployment/k8s/aws/
