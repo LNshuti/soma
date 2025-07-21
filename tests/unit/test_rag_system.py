@@ -1,8 +1,10 @@
-import pytest
+from unittest.mock import MagicMock, patch
+
 import pandas as pd
-from unittest.mock import patch, MagicMock
-from src.models.rag.system import RAGSystem
+import pytest
+
 from src.models.rag.generators import AdCopyGenerator, ImagePromptGenerator
+from src.models.rag.system import RAGSystem
 
 
 class TestRAGSystem:
@@ -12,12 +14,14 @@ class TestRAGSystem:
     def mock_db_manager(self):
         """Mock database manager."""
         mock_db = MagicMock()
-        mock_db.fetch_dataframe.return_value = pd.DataFrame({
-            "book_id": ["BOOK_001"],
-            "title": ["Test Book"],
-            "author": ["Test Author"],
-            "genre": ["Fiction"]
-        })
+        mock_db.fetch_dataframe.return_value = pd.DataFrame(
+            {
+                "book_id": ["BOOK_001"],
+                "title": ["Test Book"],
+                "author": ["Test Author"],
+                "genre": ["Fiction"],
+            }
+        )
         return mock_db
 
     @pytest.fixture
@@ -34,16 +38,16 @@ class TestRAGSystem:
     def test_initialize(self, rag_system):
         """Test RAG system initialization."""
         result = rag_system.initialize()
-        
+
         assert result is True
         assert rag_system.is_initialized is True
 
     def test_generate_ad_copy(self, rag_system):
         """Test ad copy generation."""
         rag_system.initialize()
-        
+
         result = rag_system.generate_ad_copy("BOOK_001", "social_media", "young_adult")
-        
+
         assert isinstance(result, dict)
         assert "book_id" in result
         assert "ad_type" in result
@@ -52,9 +56,9 @@ class TestRAGSystem:
     def test_generate_image_prompts(self, rag_system):
         """Test image prompt generation."""
         rag_system.initialize()
-        
+
         result = rag_system.generate_image_prompts("BOOK_001", "modern")
-        
+
         assert isinstance(result, dict)
         assert "book_id" in result
         assert "style" in result
@@ -63,7 +67,7 @@ class TestRAGSystem:
     def test_health_check(self, rag_system):
         """Test health check."""
         health = rag_system.health_check()
-        
+
         assert isinstance(health, dict)
         assert "status" in health
         assert "components" in health
